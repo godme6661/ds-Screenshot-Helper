@@ -1,17 +1,10 @@
 # ds截图助手
 
-> 按一下快捷键（默认 `Alt+A`）框选屏幕 → 图片自动送进 DeepSeek 网页的输入框 → 窗口自动跳出来。
-> 接着直接在网页里打字提问、发送、看回答。
+> 一个用来方便截图询问ds的悬浮球小工具
+> 按一下快捷键（默认 `Alt+A`）框选屏幕 → 图片自动送进 DeepSeek 网页的输入框 → 窗口自动跳出来
+> 接着直接在网页里打字提问、发送、看回答
 
 ---
-
-## 设计取舍（重要）
-
-这个工具**只做一件事**：把截图塞进 DeepSeek 网页，然后把网页窗口推到你面前。
-
-**不做的事**：不代填问题、不点发送、不抓回答、不做提问模板、不存历史。
-原因很直接——那些自动化才是"等待回答超时""发送没生效"这类问题的来源。
-发送和对话交给官方网页最稳，也不会因为网页改版而失效。
 
 ## 功能
 
@@ -46,42 +39,6 @@ npm start            # 运行
 
 首次使用：按 `Alt+A` 截图 → 弹出的网页窗口里登录 DeepSeek 账号（只需一次）→ 再按一次 `Alt+A`，
 图片就会自动出现在输入框里。
-
-## 打包
-
-打包依赖（`electron-packager` / `electron-builder`）已在 2026-10-01 的工作区瘦身中移除
-（约 350 个包、274 MB）。本项目日常用 `npm start`、`启动ds截图助手.bat` 或桌面快捷方式运行，
-不需要打包，所以默认不带这套工具链。
-
-需要重新打包时：
-
-1. `npm i -D electron-packager electron-builder`
-2. 把 `pack` / `dist` 脚本与 `build` 配置从 `handoff.md` §7 拷回 `package.json`（原文已存档在那里）
-
-```bash
-npm run icons        # 重新生成图标（可选，图标已随仓库提供）
-```
-
-## 验证
-
-```bash
-npm test             # 冒烟：配置/几何/源码一致性/图标（28 项，无需 GUI）
-```
-
-需要 Electron 的测试：
-
-```bash
-npm run test:drag    # 拖动链路：跟随循环 + 页面阈值判定 + 右键菜单（用合成鼠标事件，无需手动拖）
-npm run test:inject  # 关键路径端到端：图片真的进了 file input
-
-# 界面渲染自检，截图输出到 preview/shots/
-node_modules\electron\dist\electron.exe tools\render-check.js --list
-node_modules\electron\dist\electron.exe tools\render-check.js --scene ball
-```
-
-> 跑这些测试前如果当前 shell 里有 `ELECTRON_RUN_AS_NODE=1`，
-> Electron 会以 Node 模式启动、`require('electron').app` 是 `undefined`。
-> 先 `Remove-Item Env:\ELECTRON_RUN_AS_NODE` 再跑。
 
 ## 目录结构
 
