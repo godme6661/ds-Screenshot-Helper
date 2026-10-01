@@ -1,0 +1,20 @@
+{
+  "name": "ds-screenshot-assistant",
+  "productName": "ds截图助手",
+  "version": "2.0.0",
+  "description": "ds截图助手 - 悬浮球框选截图，一键向 AI 提问（DeepSeek 网页版）",
+  "main": "src/main.js",
+  "author": "",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node tools/smoke-test.js",
+    "test:drag": "electron tools/drag-test.js",
+    "test:inject": "electron tools/inject-test.js",
+    "icons": "node tools/make-icons.js --out build"
+  },
+  "devDependencies": {
+    "electron": "^43.0.0"
+  }
+}

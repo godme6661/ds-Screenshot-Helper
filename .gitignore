@@ -1,0 +1,10 @@
+# 依赖与运行时（体积很大，不入库）
+node_modules/
+
+# 测试/诊断产物（可随时重新生成）
+preview/
+*.log
+
+# 打包输出（打包工具链已在瘦身中移除，见 README）
+dist/
+release/

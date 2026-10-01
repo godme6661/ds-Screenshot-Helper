@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+  <title>ds截图助手</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+    html, body {
+      width: 100%; height: 100%; overflow: visible; background: transparent;
+      font-family: -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      display: flex; align-items: center; justify-content: center;
+    }
+    /* ---------- 悬浮球 ---------- */
+    .ball {
+      width: 46px; height: 46px; border-radius: 50%;
+      background: radial-gradient(120% 120% at 30% 20%, #6fa8e8 0%, #4A90D9 45%, #6C5CE7 100%);
+      box-shadow: 0 4px 14px rgba(74, 110, 217, .5), 0 0 0 2px rgba(255,255,255,.18);
+      display: flex; align-items: center; justify-content: center;
+      cursor: grab; position: relative;
+      transition: transform .16s cubic-bezier(.22,.61,.36,1), box-shadow .16s;
+      /* 注意：这里**不要**写 -webkit-app-region: drag。
+         它在 Windows 上会吞掉页面鼠标事件（单击/右键都收不到），
+         拖动改由脚本调用主进程的 win.startWindowDrag() 完成。 */
+    }
+    .ball:hover { transform: scale(1.08); box-shadow: 0 6px 22px rgba(74, 110, 217, .65), 0 0 0 3px rgba(255,255,255,.28); }
+    .ball:active { cursor: grabbing; transform: scale(.94); }
+    .ball .icon { font-size: 20px; line-height: 1; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+
+    /* 这里曾经有「转圈忙碌态」和「状态气泡」，都删掉了：
+       球窗口只有 48x48，260px 宽的气泡整块都落在窗口外（实测 DOM 矩形 x=-56,y=-98），
+       从来没显示出来过；而忙碌态在截图时球本来就被隐藏，也看不见。
+       操作反馈改为：截图完成会把 DeepSeek 网页窗口弹到前台，失败则弹系统通知。 */
+
+    /* 右键菜单已改由主进程用原生 Menu.popup() 弹出：
+       球窗口只有 48px，装不下 176px 的 HTML 菜单，一定会被窗口边界裁掉。 */
+  </style>
+</head>
+<body>
+  <div class="ball" id="ball" title="左键截图并送到 DeepSeek 网页 · 右键更多">
+    <span class="icon">📸</span>
+  </div>
+
+  <script>
+  (function () {
+    'use strict';
+    const api = window.electronAPI || {};
+    const ball = document.getElementById('ball');
+
+    // ---------- 拖动 + 单击判定 ----------
+    // 拖动时 renderer 只发「开始 / 结束」两个信号，窗口移动由主进程轮询光标完成。
+    // 三条死路都试过：逐帧 IPC 移动窗口会累积延迟（球不跟鼠标）；
+    // CSS 拖拽区在 Windows 上会吞掉页面鼠标事件（球点不动）；
+    // win.startWindowDrag() 在 Electron 43 里根本不存在（拖动完全没反应）。
+    // 判定：按下后位移超过 5px 才算拖动；没超过就是单击（截图）。
+    let pressX = 0, pressY = 0, pressed = false, dragStarted = false, moveLogged = false;
+
+    ball.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      pressed = true;
+      dragStarted = false;
+      moveLogged = false;
+      // 用 clientX/clientY 判定位移，**不要**用 screenX/screenY：
+      // 实测这条链路里 screenX/screenY 恒为 0（screen=(0,0) 而 client=(24,24)），
+      // 于是 hypot(0,0)=0 永远跨不过 5px 阈值，dragStart 一次都发不出去 —— 表现为「拖动完全没反应」。
+      pressX = e.clientX; pressY = e.clientY;
+      console.log(`按下：按下点=(${pressX},${pressY})`);
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!pressed) return;
+      // 只记第一条：排查「拖动没反应」时，这一行就能说明事件到没到、坐标是否正常
+      if (!moveLogged) {
+        moveLogged = true;
+        console.log(`首次 mousemove：client=(${e.clientX},${e.clientY}) screen=(${e.screenX},${e.screenY})`);
+      }
+      if (dragStarted) return;
+      const moved = Math.hypot(e.clientX - pressX, e.clientY - pressY);
+      if (moved <= 5) return;
+      dragStarted = true;
+      // 把**按下点**一并交给主进程当作抓取偏移。
+      // 关键：偏移必须是按下那一刻的按下点（天然 ≤ 球窗口尺寸），
+      // 不能由主进程用「光标 − 窗口」反推 —— 快速拖动时 Chromium 会合并 mousemove，
+      // 第一条事件可能已经在几百像素之外，反推出来的偏移会让球永远吊在光标旁边几百像素处
+      // （日志实证：抓取偏移=(184,205)、(714,715)，而窗口只有 48px，最后把球推到屏幕外）。
+      console.log(`开始拖动：位移 ${Math.round(moved)}px，按下点=(${pressX},${pressY})`);
+      api.dragStart && api.dragStart({ x: pressX, y: pressY });
+    });
+
+    // 收尾：必须通知主进程停表，否则跟随定时器会一直跑（球会粘着鼠标不放）
+    function endDrag(reason) {
+      if (!pressed && !dragStarted) return;
+      pressed = false;
+      if (dragStarted) {
+        dragStarted = false;
+        console.log(`结束拖动（${reason || 'unknown'}）`);
+        api.dragEnd && api.dragEnd();
+      }
+    }
+
+    ball.addEventListener('mouseup', (e) => {
+      if (e.button !== 0) return;
+      if (dragStarted) { endDrag('球上 mouseup'); return; }   // 拖动结束，交给主进程吸附
+      if (!pressed) return;
+      pressed = false;
+      // 位移没超过阈值 → 单击：截图并送到网页
+      api.capture && api.capture();
+    });
+
+    // 鼠标在球外松开时也要收尾。
+    // 注意：**不要**用 mouseleave 结束拖动 —— 窗口跟随有约 8ms 滞后，快速拖动时
+    // 光标会瞬时跑到球元素外，那样会把正常的拖动误杀掉；真正的「看不见的松手」
+    // 由主进程的逃逸检测兜底（见 windows.js 的 FOLLOW_ESCAPE_TICKS）。
+    document.addEventListener('mouseup', () => { endDrag('document mouseup'); });
+
+    // ---------- 右键菜单 ----------
+    // 交给主进程弹**原生菜单**：球窗口只有 48x48，HTML 菜单（176x120）会被窗口裁掉，
+    // 只有原生 Menu.popup() 才能画到窗口外面去。
+    ball.addEventListener('contextmenu', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      api.contextMenu && api.contextMenu();
+      // 注意：这里**不要**恢复 CSS 拖拽区（曾有一行 ball.style.webkitAppRegion = 'drag'）。
+      // 那会让球在右键一次之后变成拖拽区，Windows 上随即吞掉页面的单击/右键，球就点不动了。
+    });
+
+    // 提示交给球的悬停 tooltip（见 <div class="ball" title="...">）——
+    // 窗口里显示不了任何文字气泡。
+  })();
+  </script>
+</body>
+</html>
